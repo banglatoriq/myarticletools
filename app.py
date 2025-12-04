@@ -66,7 +66,12 @@ def load_planner_data():
     if os.path.exists(PLANNER_FILE):
         try:
             with open(PLANNER_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Ensure 'checked_keywords' list exists for migration
+                for item in data:
+                    if 'checked_keywords' not in item:
+                        item['checked_keywords'] = []
+                return data
         except:
             return []
     return []
@@ -76,7 +81,6 @@ def save_planner_data(data):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 # --- মেইন অ্যাপ এরিয়া (Tabs) ---
-# নতুন ট্যাব যোগ করা হয়েছে: "🗂️ Content Planner"
 tab_seo, tab_amazon, tab_affiliate, tab_planner = st.tabs(["🔎 SEO Research", "🛒 Amazon Product Info", "🎨 Affiliate Code Gen", "🗂️ Content Planner"])
 
 # ==========================
@@ -150,7 +154,6 @@ with tab_amazon:
     product_url = st.text_input("Paste Amazon Product Link:", placeholder="https://www.amazon.com/dp/B08...")
     amazon_submit = st.button("📦 Get Product Info")
 
-    # --- Helper Function for HD Images ---
     def get_high_res_image(img_url):
         if not img_url or img_url == "N/A":
             return "N/A"
@@ -599,7 +602,15 @@ with tab_planner:
                                 kw_key = f"chk_{idx}_{hash(kw)}"
                                 is_checked = kw in checked_kws
                                 
-                                new_checked = st.checkbox(kw, value=is_checked, key=kw_key)
+                                # Use columns for layout: Checkbox | Copy-able Code Block
+                                k_col1, k_col2 = st.columns([0.15, 0.85])
+                                
+                                with k_col1:
+                                    new_checked = st.checkbox("Done", value=is_checked, key=kw_key, label_visibility="collapsed")
+                                
+                                with k_col2:
+                                    # Use st.code to provide a copy button
+                                    st.code(kw, language=None)
                                 
                                 if new_checked != is_checked:
                                     if new_checked:
@@ -607,7 +618,7 @@ with tab_planner:
                                     else:
                                         item.setdefault('checked_keywords', []).remove(kw)
                                     save_planner_data(st.session_state.planner_data)
-                                    # We don't rerun here to allow quick multiple ticks without reload lag
+                                    st.rerun()
                     
                     # --- Edit Keywords Expander (Bottom of Card) ---
                     with st.expander("⚙️ Edit"):
