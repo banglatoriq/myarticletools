@@ -1,4 +1,6 @@
 streamlit
 google-search-results
 pandas
+pytesseract
+Pillow
 openpyxl
