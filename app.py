@@ -634,3 +634,42 @@ with tab_planner:
                             st.session_state.planner_data[idx]['keywords'] = new_keywords_str
                             save_planner_data(st.session_state.planner_data)
                             st.rerun()
+
+# ==========================
+# TAB 6: IMAGE TO TEXT (OCR)
+# ==========================
+with tab_ocr:
+    st.header("📷 Image to Text (OCR)")
+    st.info("যেকোনো ছবি আপলোড করুন, আমরা তার ভেতরের লেখাগুলো বের করে দেব।")
+
+    uploaded_image = st.file_uploader("Upload an Image (JPG, PNG)", type=["jpg", "png", "jpeg"])
+
+    if uploaded_image is not None:
+        # Display the uploaded image
+        col_img_view, col_text_view = st.columns(2)
+        
+        with col_img_view:
+            st.image(uploaded_image, caption="Uploaded Image", use_container_width=True)
+            if st.button("🔍 Extract Text", type="primary"):
+                st.session_state.do_ocr = True
+
+        with col_text_view:
+            if st.session_state.get('do_ocr'):
+                with st.spinner("Extracting text..."):
+                    try:
+                        # Open image with PIL
+                        image = Image.open(uploaded_image)
+                        
+                        # Perform OCR
+                        extracted_text = pytesseract.image_to_string(image)
+                        
+                        st.subheader("📝 Extracted Text:")
+                        if extracted_text.strip():
+                            st.text_area("Copy text below:", value=extracted_text, height=300)
+                        else:
+                            st.warning("No text found in the image.")
+                            
+                    except Exception as e:
+                        st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
+                        st.caption(f"Details: {e}")
+                        st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
