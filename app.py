@@ -4,6 +4,8 @@ import re
 import json
 import os
 import pandas as pd
+from PIL import Image
+import pytesseract
 
 # --- পেজের কনফিগারেশন ---
 st.set_page_config(page_title="SEO & Amazon Tool", page_icon="🛠️", layout="wide")
@@ -13,7 +15,7 @@ st.title("🛠️ All-in-One Content & Affiliate Tool")
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # --- API Key Management (Save Option Added) ---
+    # --- API Key Management ---
     if 'api_key' not in st.session_state:
         query_params = st.query_params
         st.session_state.api_key = query_params.get("api_key", "")
@@ -67,7 +69,6 @@ def load_planner_data():
         try:
             with open(PLANNER_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Ensure 'checked_keywords' list exists for migration
                 for item in data:
                     if 'checked_keywords' not in item:
                         item['checked_keywords'] = []
@@ -80,8 +81,107 @@ def save_planner_data(data):
     with open(PLANNER_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+# --- Text Formatting Function (Inline CSS Version) ---
+def format_text_to_html(text, style_name):
+    # Define Inline Styles for each theme
+    styles = {
+        "Modern Clean": {
+            "div": "font-family: 'Inter', 'Segoe UI', sans-serif; line-height: 1.7; color: #333; max-width: 100%;",
+            "h1": "color: #111; font-weight: 800; margin-top: 0.5em; margin-bottom: 0.5em; font-size: 2.2em;",
+            "h2": "color: #111; font-weight: 700; margin-top: 1.5em; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; font-size: 1.8em;",
+            "h3": "color: #444; font-weight: 600; margin-top: 1.2em; font-size: 1.4em;",
+            "p": "margin-bottom: 1.2em; font-size: 17px; color: #333;",
+            "ul": "margin-bottom: 1.2em; padding-left: 20px;",
+            "li": "margin-bottom: 8px;",
+            "img": "max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0; display: block;",
+            "strong": "color: #000; font-weight: 700;"
+        },
+        "Classic Serif": {
+            "div": "font-family: 'Georgia', 'Cambria', serif; line-height: 1.8; color: #2a2a2a; font-size: 18px; max-width: 100%;",
+            "h1": "font-family: 'Georgia', serif; color: #000; margin-top: 40px; font-size: 32px; font-weight: normal;",
+            "h2": "font-family: 'Georgia', serif; color: #000; margin-top: 40px; font-size: 28px; font-weight: normal; border-bottom: 1px solid #ccc; padding-bottom: 5px;",
+            "h3": "font-family: 'Georgia', serif; color: #333; margin-top: 30px; font-style: italic; font-size: 24px;",
+            "p": "margin-bottom: 24px;",
+            "ul": "margin-bottom: 24px; padding-left: 25px;",
+            "li": "margin-bottom: 10px;",
+            "img": "max-width: 100%; height: auto; border: 1px solid #ddd; padding: 5px; margin: 20px auto; display: block;",
+            "strong": "font-weight: bold; color: #000;"
+        },
+        "Magazine Focus": {
+            "div": "font-family: 'Merriweather', serif; line-height: 1.9; color: #222; max-width: 100%; background: #fff; padding: 20px; box-sizing: border-box;",
+            "h1": "font-family: 'Montserrat', sans-serif; text-transform: uppercase; letter-spacing: 1px; color: #2c3e50; margin-top: 20px; font-size: 36px;",
+            "h2": "font-family: 'Montserrat', sans-serif; text-transform: uppercase; letter-spacing: 1px; color: #d35400; border-left: 5px solid #d35400; padding-left: 15px; margin-top: 40px; font-size: 26px;",
+            "h3": "font-family: 'Montserrat', sans-serif; color: #2c3e50; margin-top: 30px; font-size: 22px;",
+            "p": "margin-bottom: 20px; font-size: 18px;",
+            "ul": "list-style-type: square; color: #d35400; margin-bottom: 20px; padding-left: 20px;",
+            "li": "margin-bottom: 10px; color: #222;",
+            "img": "width: 100%; height: auto; margin: 30px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1);",
+            "strong": "font-weight: bold; color: #222;"
+        }
+    }
+    
+    current_style = styles.get(style_name, styles["Modern Clean"])
+    
+    # Start HTML with Container Div
+    html_content = f'<div style="{current_style["div"]}">\n'
+    
+    # Parse Markdown
+    lines = text.split('\n')
+    in_list = False
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if in_list:
+                html_content += "</ul>\n"
+                in_list = False
+            continue
+            
+        # Headers
+        if line.startswith('### '):
+            html_content += f'<h3 style="{current_style["h3"]}">{line[4:]}</h3>\n'
+        elif line.startswith('## '):
+            html_content += f'<h2 style="{current_style["h2"]}">{line[3:]}</h2>\n'
+        elif line.startswith('# '):
+            html_content += f'<h1 style="{current_style["h1"]}">{line[2:]}</h1>\n'
+        # Lists
+        elif line.startswith('- ') or line.startswith('* '):
+            if not in_list:
+                html_content += f'<ul style="{current_style["ul"]}">\n'
+                in_list = True
+            html_content += f'<li style="{current_style["li"]}">{line[2:]}</li>\n'
+        # Images (Basic Markdown Syntax: ![alt](url))
+        elif line.startswith('![') and '](' in line:
+            try:
+                alt = line.split('![')[1].split('](')[0]
+                src = line.split('](')[1].split(')')[0]
+                html_content += f'<img src="{src}" alt="{alt}" style="{current_style["img"]}">\n'
+            except:
+                html_content += f'<p style="{current_style["p"]}">{line}</p>\n'
+        # Paragraphs
+        else:
+            if in_list:
+                html_content += "</ul>\n"
+                in_list = False
+            # Bold parsing with inline style
+            line = re.sub(r'\*\*(.*?)\*\*', f'<strong style="{current_style["strong"]}">\\1</strong>', line)
+            html_content += f'<p style="{current_style["p"]}">{line}</p>\n'
+            
+    if in_list:
+        html_content += "</ul>\n"
+
+    html_content += "</div>"
+    return html_content
+
 # --- মেইন অ্যাপ এরিয়া (Tabs) ---
-tab_seo, tab_amazon, tab_affiliate, tab_planner = st.tabs(["🔎 SEO Research", "🛒 Amazon Product Info", "🎨 Affiliate Code Gen", "🗂️ Content Planner"])
+tab_seo, tab_amazon, tab_affiliate, tab_planner, tab_formatter, tab_ocr = st.tabs([
+    "🔎 SEO Research", 
+    "🛒 Amazon Product Info", 
+    "🎨 Affiliate Code Gen", 
+    "🗂️ Content Planner", 
+    "📝 Blog Formatter",
+    "📷 Image to Text"
+])
 
 # ==========================
 # TAB 1: SEO RESEARCH
@@ -153,12 +253,6 @@ with tab_amazon:
     
     product_url = st.text_input("Paste Amazon Product Link:", placeholder="https://www.amazon.com/dp/B08...")
     amazon_submit = st.button("📦 Get Product Info")
-
-    def get_high_res_image(img_url):
-        if not img_url or img_url == "N/A":
-            return "N/A"
-        clean_url = re.sub(r'\._[A-Z]{2}.+?\.', '.', img_url)
-        return clean_url
 
     if amazon_submit:
         if not api_key:
@@ -634,6 +728,48 @@ with tab_planner:
                             st.session_state.planner_data[idx]['keywords'] = new_keywords_str
                             save_planner_data(st.session_state.planner_data)
                             st.rerun()
+
+# ==========================
+# TAB 5: BLOG FORMATTER (New Feature)
+# ==========================
+with tab_formatter:
+    st.header("📝 Blog Post Formatter")
+    st.info("আপনার আর্টিকেলটি এখানে পেস্ট করুন। আমরা এটিকে সুন্দর, রেসপন্সিভ এবং SEO-Friendly HTML এ রূপান্তর করে দেব।")
+
+    col_input, col_settings = st.columns([3, 1])
+    
+    with col_settings:
+        st.subheader("Design Settings")
+        design_style = st.selectbox(
+            "Select Design Style:", 
+            ["Modern Clean", "Classic Serif", "Magazine Focus"]
+        )
+        st.write("---")
+        if st.button("🔄 Convert to HTML", type="primary", use_container_width=True):
+            st.session_state.do_convert = True
+        
+    with col_input:
+        raw_blog_text = st.text_area(
+            "Paste your full blog content here (supports Basic Markdown like # Headers, - Lists, **Bold**):", 
+            height=400,
+            placeholder="# My Awesome Blog Post\n\nHere is the introduction...\n\n## Key Features\n- Feature 1\n- Feature 2"
+        )
+
+    if st.session_state.get('do_convert') and raw_blog_text:
+        st.divider()
+        st.subheader("🎉 Your Formatted HTML")
+        
+        # Convert text to styled HTML
+        formatted_html = format_text_to_html(raw_blog_text, design_style)
+        
+        # Display Code with Copy Button
+        st.code(formatted_html, language='html')
+        
+        st.subheader("👁️ Live Preview")
+        # Display preview inside an iframe to isolate styles
+        st.components.v1.html(formatted_html, height=600, scrolling=True)
+        
+        st.success("HTML generated successfully! Copy the code above and paste it into your CMS (WordPress Custom HTML block, Blogger HTML view, etc.).")
 
 # ==========================
 # TAB 6: IMAGE TO TEXT (OCR)
