@@ -4,3 +4,11 @@ pandas
 pytesseract
 Pillow
 openpyxl
+streamlit
+google-search-results
+pandas
+openpyxl
+pytesseract
+Pillow
+requests
+beautifulsoup4
