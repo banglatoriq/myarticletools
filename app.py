@@ -192,47 +192,122 @@ with tab_seo:
                 st.error(f"Error: {e}")
 
 # ==========================
-# TAB 2: AMAZON PRODUCT INFO (NEW SCRAPER LOGIC)
+# TAB 2: AMAZON PRODUCT INFO (UPDATED: Title, Gallery, Description & Desc Images)
 # ==========================
 with tab_amazon:
     st.subheader("🛒 Amazon Product Scraper")
-    st.info("Direct link scraper. No API Key required for this tab.")
+    st.info("Direct link scraper. Shows Title, Main Gallery, Bullet Points & Description Images.")
     
     amazon_url = st.text_input("Enter Amazon Product URL:", placeholder="https://www.amazon.com/dp/...")
     
     if st.button("Get Product Data"):
         if amazon_url:
-            with st.spinner("Scraping Amazon Data..."):
-                data = get_amazon_product_data(amazon_url)
+            with st.spinner("Scraping Amazon Data (Title, Bullets, Images)..."):
+                # --- SCRAPING LOGIC START ---
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9"
+                }
                 
-                if "error" in data:
-                    st.error(f"Failed: {data['error']}")
-                else:
+                try:
+                    response = requests.get(amazon_url, headers=headers)
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    
+                    # 1. Product Title
+                    title_tag = soup.find(id="productTitle")
+                    product_title = title_tag.get_text(strip=True) if title_tag else "Title Not Found"
+                    
+                    # 2. Main Gallery Images
+                    main_images = []
+                    img_container = soup.find("img", {"id": "landingImage"})
+                    if img_container and img_container.get("data-a-dynamic-image"):
+                        json_data = img_container.get("data-a-dynamic-image")
+                        main_images = list(json.loads(json_data).keys())
+                    
+                    # Fallback for main images
+                    if not main_images:
+                        match = re.search(r'"hiRes":"(.*?)"', response.text)
+                        if match: main_images.append(match.group(1))
+
+                    # 3. Product Summary (Bullet Points)
+                    bullet_points = []
+                    bullets_ul = soup.find(id="feature-bullets")
+                    if bullets_ul:
+                        for li in bullets_ul.find_all("li"):
+                            txt = li.get_text(strip=True)
+                            # Remove hidden spans or irrelevant text
+                            if txt and not "hidden" in str(li):
+                                bullet_points.append(f"• {txt}")
+                    
+                    summary_text = "\n".join(bullet_points)
+
+                    # 4. Description Images (A+ Content / Product Description)
+                    desc_images = []
+                    # Try getting images from A+ content div (aplus) or standard description
+                    desc_divs = soup.select("#aplus img, #productDescription img")
+                    
+                    for img in desc_divs:
+                        # Amazon uses data-src for lazy loading in descriptions often
+                        src = img.get("data-src") or img.get("src")
+                        if src and "gif" not in src and "pixel" not in src: # Filter tiny icons
+                            # Fix relative URLs if any
+                            if src.startswith("//"): src = "https:" + src
+                            if src not in desc_images and src not in main_images:
+                                desc_images.append(src)
+
+                    # --- DISPLAY LOGIC START ---
+                    
                     st.success("✅ Product Found!")
                     
-                    # Title
+                    # --- Section A: Title ---
                     st.markdown("### 🏷️ Product Title")
-                    st.code(data['title'], language=None)
-                    
-                    # Info Metrics
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Price", data['price'])
-                    c2.metric("Rating", f"⭐ {data['rating']}")
-                    c3.metric("ASIN", extract_asin(amazon_url))
+                    st.code(product_title, language=None)
                     
                     st.divider()
+
+                    # --- Section B: Main Gallery Images ---
+                    st.markdown(f"### 🖼️ Main Gallery Images ({len(main_images)})")
+                    if main_images:
+                        cols = st.columns(3)
+                        for i, img_link in enumerate(main_images):
+                            with cols[i % 3]:
+                                with st.container(border=True):
+                                    st.image(img_link, use_container_width=True)
+                                    st.caption("Main Image")
+                                    st.code(img_link, language=None)
+                    else:
+                        st.warning("No main images found via scraping.")
+
+                    st.divider()
+
+                    # --- Section C: Product Summary (Bullets) ---
+                    st.markdown("### 📝 Product Summary (Features)")
+                    if summary_text:
+                        st.text_area("Copy Summary:", value=summary_text, height=200)
+                    else:
+                        st.info("No bullet points found.")
+
+                    st.divider()
+
+                    # --- Section D: Description Images (A+ Content) ---
+                    st.markdown(f"### 📄 Description/A+ Images ({len(desc_images)})")
+                    st.info("এই ছবিগুলো প্রোডাক্টের ডেসক্রিপশন বা A+ কন্টেন্ট থেকে নেওয়া হয়েছে।")
                     
-                    # Image Gallery
-                    images = data['images']
-                    st.markdown(f"### 🖼️ Image Gallery ({len(images)} found)")
-                    
-                    cols = st.columns(3)
-                    for i, img_link in enumerate(images):
-                        with cols[i % 3]:
-                            with st.container(border=True):
-                                st.image(img_link, use_container_width=True)
-                                st.caption(f"Link #{i+1}")
-                                st.code(img_link, language=None)
+                    if desc_images:
+                        # Show in grid
+                        d_cols = st.columns(3)
+                        for i, d_img in enumerate(desc_images):
+                            with d_cols[i % 3]:
+                                with st.container(border=True):
+                                    st.image(d_img, use_container_width=True)
+                                    st.caption("Desc Image")
+                                    st.code(d_img, language=None)
+                    else:
+                        st.caption("No additional images found in the description.")
+
+                except Exception as e:
+                    st.error(f"Error scraping data: {str(e)}")
+                    st.caption("Tip: Amazon blocks frequent requests. Try a different product or wait a bit.")
         else:
             st.warning("Please enter a URL.")
 
@@ -626,6 +701,7 @@ with tab_ocr:
                         st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
                         st.caption(f"Details: {e}")
                         st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
+
 
 
 
