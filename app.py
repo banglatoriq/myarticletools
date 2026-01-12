@@ -246,18 +246,18 @@ Competitors: {chr(10).join([c.replace('- ', '').split('](')[1][:-1] for c in com
                 st.error(f"Error: {e}")
 
 # ==========================
-# TAB 2: AMAZON PRODUCT INFO
+# TAB 2: AMAZON PRODUCT INFO (UPDATED)
 # ==========================
 with tab_amazon:
-    st.subheader("Amazon Product Details Fetcher")
-    st.info("💡 অ্যামাজন লিংক দিন, আমরা টাইটেল, ইমেজ এবং রেটিং নিয়ে আসব।")
+    st.subheader("Amazon Product Gallery & Details")
+    st.info("💡 অ্যামাজন লিংক দিন। আমরা সব ইমেজ গ্যালারি আকারে দেখাব এবং টাইটেল কপি করার ব্যবস্থা করে দেব।")
     
     product_url = st.text_input("Paste Amazon Product Link:", placeholder="https://www.amazon.com/dp/B08...")
-    amazon_submit = st.button("📦 Get Product Info")
+    amazon_submit = st.button("📦 Get Product Images & Info")
 
     if amazon_submit:
         if not api_key:
-            st.error("⚠️ SerpApi Key প্রয়োজন।")
+            st.error("⚠️ SerpApi Key প্রয়োজন। Settings এ গিয়ে Key দিন।")
         elif not product_url:
             st.warning("⚠️ লিংক দিন।")
         else:
@@ -266,11 +266,17 @@ with tab_amazon:
                 st.error("❌ লিংকটি সঠিক নয় বা ASIN পাওয়া যায়নি।")
             else:
                 try:
-                    with st.spinner(f'Fetching details for ASIN: {asin}...'):
+                    with st.spinner(f'Fetching all images for ASIN: {asin}...'):
                         found_data = False
                         error_log = ""
+                        
+                        # Data placeholders
+                        product_title = "N/A"
+                        product_price = "Check on Amazon"
+                        product_rating = "N/A"
+                        image_list = [] # List to store all images
 
-                        # Step 1: Amazon Product API
+                        # Step 1: Amazon Product API (Best for getting ALL images)
                         try:
                             params = {
                                 "engine": "amazon_product",
@@ -281,31 +287,31 @@ with tab_amazon:
                             search = GoogleSearch(params)
                             results = search.get_dict()
 
-                            if "error" in results:
-                                raise Exception(results["error"])
-
                             if "product_result" in results:
                                 product = results["product_result"]
-                                title = product.get("title", "N/A")
-                                raw_image = "N/A"
-                                if "images" in product and len(product["images"]) > 0:
-                                    first_img = product["images"][0]
-                                    raw_image = first_img.get("link") if isinstance(first_img, dict) else first_img
-                                else:
-                                    raw_image = product.get("main_image", "N/A")
-                                image = get_high_res_image(raw_image)
-                                rating = product.get("rating", "N/A")
-                                reviews = product.get("reviews", "N/A")
-                                price = "Check on Amazon"
+                                product_title = product.get("title", "N/A")
+                                product_rating = product.get("rating", "N/A")
                                 if "price" in product:
-                                    price = product["price"]
-                                elif "prices" in results and len(results["prices"]) > 0:
-                                    price = results["prices"][0].get("price", "Check on Amazon")
+                                    product_price = product["price"]
+                                
+                                # Fetch ALL Images
+                                if "images" in product and len(product["images"]) > 0:
+                                    for img in product["images"]:
+                                        # Handle if image is dict or string
+                                        raw_link = img.get("link") if isinstance(img, dict) else img
+                                        hd_link = get_high_res_image(raw_link)
+                                        if hd_link not in image_list:
+                                            image_list.append(hd_link)
+                                else:
+                                    # Fallback if no gallery
+                                    main_img = product.get("main_image", "N/A")
+                                    image_list.append(get_high_res_image(main_img))
+                                
                                 found_data = True
                         except Exception as e:
                             error_log = f"Amazon Product API: {str(e)}"
 
-                        # Step 2: Amazon Search API Fallback
+                        # Step 2: Fallback (If Product API fails, try Search API - gets only 1 image usually)
                         if not found_data:
                             try:
                                 params_fallback = {
@@ -319,74 +325,47 @@ with tab_amazon:
                                 
                                 if "organic_results" in results and len(results["organic_results"]) > 0:
                                     item = results["organic_results"][0]
-                                    title = item.get("title", "N/A")
+                                    product_title = item.get("title", "N/A")
                                     raw_image = item.get("thumbnail", "N/A")
-                                    image = get_high_res_image(raw_image)
-                                    rating = item.get("rating", "N/A")
-                                    reviews = item.get("reviews", "N/A")
-                                    price = item.get("price", "Check on Amazon")
+                                    image_list.append(get_high_res_image(raw_image))
                                     found_data = True
                             except Exception as e:
-                                error_log += f" | Amazon Search API: {str(e)}"
-
-                        # Step 3: Google Search Fallback
-                        if not found_data:
-                            try:
-                                params_google = {
-                                    "engine": "google",
-                                    "q": f"site:amazon.com {asin}",
-                                    "location": "United States",
-                                    "google_domain": "google.com",
-                                    "gl": "us",
-                                    "hl": "en",
-                                    "api_key": api_key
-                                }
-                                search_google = GoogleSearch(params_google)
-                                results = search_google.get_dict()
-                                
-                                if "organic_results" in results and len(results["organic_results"]) > 0:
-                                    item = results["organic_results"][0]
-                                    raw_title = item.get("title", "N/A")
-                                    title = raw_title.replace("Amazon.com: ", "").replace("Amazon.com : ", "")
-                                    raw_image = item.get("thumbnail", "N/A")
-                                    image = get_high_res_image(raw_image)
-                                    rating = "N/A"
-                                    reviews = "N/A"
-                                    price = "Check on Amazon"
-                                    if "rich_snippet" in item and "top" in item["rich_snippet"]:
-                                        extensions = item["rich_snippet"]["top"].get("detected_extensions", {})
-                                        rating = extensions.get("rating", "N/A")
-                                        reviews = extensions.get("reviews", "N/A")
-                                        price = extensions.get("price", "Check on Amazon")
-                                    found_data = True
-                            except Exception as e:
-                                error_log += f" | Google Fallback: {str(e)}"
+                                error_log += f" | Fallback: {str(e)}"
 
                         if found_data:
-                            st.success("✅ প্রোডাক্ট পাওয়া গেছে!")
-                            col_img, col_data = st.columns([1, 2])
-                            with col_img:
-                                st.image(image, caption="Product Image")
-                            with col_data:
-                                st.markdown(f"### {title}")
-                                st.markdown(f"**Rating:** ⭐ {rating} ({reviews} reviews)")
-                                st.markdown(f"**Price:** {price}")
-                                st.markdown(f"**ASIN:** `{asin}`")
+                            st.success("✅ ডাটা লোড হয়েছে!")
+                            
+                            # --- Section 1: Title & Info ---
+                            st.markdown("### 🏷️ Product Title")
+                            # st.code ব্যবহার করছি কারণ এতে বিল্ট-ইন কপি বাটন থাকে
+                            st.code(product_title, language=None)
+                            
+                            c1, c2 = st.columns(2)
+                            c1.metric("Price", product_price)
+                            c2.metric("Rating", f"⭐ {product_rating}")
+                            
                             st.divider()
-                            st.subheader("📋 Copy this Table for Blog")
-                            table_md = f"""
-| Feature | Details |
-| :--- | :--- |
-| **Product Name** | {title} |
-| **Image URL** | [View Image]({image}) |
-| **Rating** | {rating}/5 |
-| **Price** | {price} |
-"""
-                            st.code(table_md, language="markdown")
+                            
+                            # --- Section 2: Image Gallery ---
+                            st.markdown(f"### 🖼️ Image Gallery ({len(image_list)} images found)")
+                            st.info("প্রতিটি ছবির নিচে লিংক দেওয়া আছে। বক্সের ডানদিকের ছোট্ট 'Copy' আইকনে ক্লিক করে লিংক কপি করুন।")
+
+                            # Grid Layout for Images
+                            cols = st.columns(3) # 3 images per row
+                            for i, img_link in enumerate(image_list):
+                                with cols[i % 3]:
+                                    with st.container(border=True):
+                                        # Show Image
+                                        st.image(img_link, use_container_width=True)
+                                        # Show Copy-able Link
+                                        st.caption(f"Image Link #{i+1}")
+                                        st.code(img_link, language=None)
+                                        
                         else:
-                            st.error(f"দুঃখিত, প্রোডাক্টটি খুঁজে পাওয়া যায়নি। (ASIN: {asin})")
+                            st.error(f"দুঃখিত, কোনো তথ্য পাওয়া যায়নি।")
                             if error_log:
-                                st.caption(f"Debug Log: {error_log}")
+                                st.caption(f"Debug: {error_log}")
+                                
                 except Exception as e:
                     st.error(f"System Error: {e}")
 
@@ -780,3 +759,4 @@ with tab_ocr:
                         st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
                         st.caption(f"Details: {e}")
                         st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
+
