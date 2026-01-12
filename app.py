@@ -50,17 +50,41 @@ with st.sidebar:
 
 # --- Helper Functions ---
 
+# --- Updated Helper Functions ---
+
+def get_domain_from_url(url):
+    """URL থেকে Amazon Domain বের করে (যেমন: amazon.in, amazon.co.uk)"""
+    try:
+        if "amazon.co.uk" in url: return "www.amazon.co.uk"
+        if "amazon.in" in url: return "www.amazon.in"
+        if "amazon.ca" in url: return "www.amazon.ca"
+        if "amazon.de" in url: return "www.amazon.de"
+        # ডিফল্ট হিসেবে .com
+        return "www.amazon.com"
+    except:
+        return "www.amazon.com"
+
 def extract_asin(url):
+    # ক্লিন করার জন্য স্পেস রিমুভ করা
+    url = url.strip()
+    
+    # সাধারণ প্যাটার্নগুলো চেক করা
     regex_list = [
         r"/dp/([A-Z0-9]{10})",
         r"/gp/product/([A-Z0-9]{10})",
         r"/product/([A-Z0-9]{10})",
-        r"dp/([A-Z0-9]{10})"
+        r"dp/([A-Z0-9]{10})",
+        r"aadp/([A-Z0-9]{10})", # মোবাইল লিংক
+        r"/[A-Z0-9]{10}"       # শর্ট লিংক প্যাটার্ন
     ]
+    
     for regex in regex_list:
         match = re.search(regex, url)
         if match:
-            return match.group(1)
+            # ১০ ক্যারেক্টারের সঠিক ASIN কিনা ডাবল চেক
+            asin = match.group(1)
+            if len(asin) == 10 and asin.isalnum():
+                return asin
     return None
 
 def get_high_res_image(img_url):
@@ -246,7 +270,7 @@ Competitors: {chr(10).join([c.replace('- ', '').split('](')[1][:-1] for c in com
                 st.error(f"Error: {e}")
 
 # ==========================
-# TAB 2: AMAZON PRODUCT INFO (UPDATED)
+# TAB 2: AMAZON PRODUCT INFO (SMART DOMAIN FIX)
 # ==========================
 with tab_amazon:
     st.subheader("Amazon Product Gallery & Details")
@@ -262,11 +286,13 @@ with tab_amazon:
             st.warning("⚠️ লিংক দিন।")
         else:
             asin = extract_asin(product_url)
+            domain = get_domain_from_url(product_url)
+            
             if not asin:
-                st.error("❌ লিংকটি সঠিক নয় বা ASIN পাওয়া যায়নি।")
+                st.error("❌ লিংকটি সঠিক নয় বা ASIN পাওয়া যায়নি। দয়া করে 'amazon.com/dp/...' ফরম্যাটের লিংক দিন।")
             else:
                 try:
-                    with st.spinner(f'Fetching all images for ASIN: {asin}...'):
+                    with st.spinner(f'Fetching details for ASIN: {asin} from {domain}...'):
                         found_data = False
                         error_log = ""
                         
@@ -274,14 +300,14 @@ with tab_amazon:
                         product_title = "N/A"
                         product_price = "Check on Amazon"
                         product_rating = "N/A"
-                        image_list = [] # List to store all images
+                        image_list = [] 
 
-                        # Step 1: Amazon Product API (Best for getting ALL images)
+                        # Step 1: Amazon Product API
                         try:
                             params = {
                                 "engine": "amazon_product",
                                 "product_id": asin,
-                                "domain": "www.amazon.com",
+                                "domain": domain, # ডাইনামিক ডোমেইন ব্যবহার করা হচ্ছে
                                 "api_key": api_key
                             }
                             search = GoogleSearch(params)
@@ -297,27 +323,28 @@ with tab_amazon:
                                 # Fetch ALL Images
                                 if "images" in product and len(product["images"]) > 0:
                                     for img in product["images"]:
-                                        # Handle if image is dict or string
                                         raw_link = img.get("link") if isinstance(img, dict) else img
                                         hd_link = get_high_res_image(raw_link)
                                         if hd_link not in image_list:
                                             image_list.append(hd_link)
                                 else:
-                                    # Fallback if no gallery
                                     main_img = product.get("main_image", "N/A")
                                     image_list.append(get_high_res_image(main_img))
                                 
                                 found_data = True
+                            elif "error" in results:
+                                error_log = results["error"]
+                                
                         except Exception as e:
                             error_log = f"Amazon Product API: {str(e)}"
 
-                        # Step 2: Fallback (If Product API fails, try Search API - gets only 1 image usually)
+                        # Step 2: Fallback to Search API (If Product page fails)
                         if not found_data:
                             try:
                                 params_fallback = {
                                     "engine": "amazon",
                                     "q": asin,
-                                    "domain": "www.amazon.com",
+                                    "domain": domain,
                                     "api_key": api_key
                                 }
                                 search_fallback = GoogleSearch(params_fallback)
@@ -335,9 +362,7 @@ with tab_amazon:
                         if found_data:
                             st.success("✅ ডাটা লোড হয়েছে!")
                             
-                            # --- Section 1: Title & Info ---
                             st.markdown("### 🏷️ Product Title")
-                            # st.code ব্যবহার করছি কারণ এতে বিল্ট-ইন কপি বাটন থাকে
                             st.code(product_title, language=None)
                             
                             c1, c2 = st.columns(2)
@@ -345,26 +370,22 @@ with tab_amazon:
                             c2.metric("Rating", f"⭐ {product_rating}")
                             
                             st.divider()
-                            
-                            # --- Section 2: Image Gallery ---
                             st.markdown(f"### 🖼️ Image Gallery ({len(image_list)} images found)")
-                            st.info("প্রতিটি ছবির নিচে লিংক দেওয়া আছে। বক্সের ডানদিকের ছোট্ট 'Copy' আইকনে ক্লিক করে লিংক কপি করুন।")
+                            st.info("লিংক কপি করতে নিচের বক্সে ক্লিক করুন।")
 
-                            # Grid Layout for Images
-                            cols = st.columns(3) # 3 images per row
+                            cols = st.columns(3)
                             for i, img_link in enumerate(image_list):
                                 with cols[i % 3]:
                                     with st.container(border=True):
-                                        # Show Image
                                         st.image(img_link, use_container_width=True)
-                                        # Show Copy-able Link
                                         st.caption(f"Image Link #{i+1}")
                                         st.code(img_link, language=None)
                                         
                         else:
                             st.error(f"দুঃখিত, কোনো তথ্য পাওয়া যায়নি।")
+                            st.markdown(f"**কারণ হতে পারে:**\n1. ASIN `{asin}` এই ডোমেইনে নেই।\n2. SerpApi লিমিট শেষ।")
                             if error_log:
-                                st.caption(f"Debug: {error_log}")
+                                st.caption(f"Debug Log: {error_log}")
                                 
                 except Exception as e:
                     st.error(f"System Error: {e}")
@@ -759,4 +780,5 @@ with tab_ocr:
                         st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
                         st.caption(f"Details: {e}")
                         st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
+
 
