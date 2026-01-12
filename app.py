@@ -50,50 +50,44 @@ with st.sidebar:
 
 # --- Helper Functions ---
 
-# --- Updated Helper Functions ---
-
 def get_domain_from_url(url):
-    """URL থেকে Amazon Domain বের করে (যেমন: amazon.in, amazon.co.uk)"""
+    """URL থেকে ক্লিন Amazon Domain বের করে (যেমন: amazon.in, amazon.com)"""
     try:
-        if "amazon.co.uk" in url: return "www.amazon.co.uk"
-        if "amazon.in" in url: return "www.amazon.in"
-        if "amazon.ca" in url: return "www.amazon.ca"
-        if "amazon.de" in url: return "www.amazon.de"
-        # ডিফল্ট হিসেবে .com
-        return "www.amazon.com"
+        # www. বা https:// সরিয়ে ফেলা
+        clean_url = url.replace("https://", "").replace("http://", "").replace("www.", "")
+        
+        if "amazon.co.uk" in clean_url: return "amazon.co.uk"
+        if "amazon.in" in clean_url: return "amazon.in"
+        if "amazon.ca" in clean_url: return "amazon.ca"
+        if "amazon.de" in clean_url: return "amazon.de"
+        if "amazon.com.au" in clean_url: return "amazon.com.au"
+        # ডিফল্ট
+        return "amazon.com"
     except:
-        return "www.amazon.com"
+        return "amazon.com"
 
 def extract_asin(url):
-    # ক্লিন করার জন্য স্পেস রিমুভ করা
     url = url.strip()
-    
-    # সাধারণ প্যাটার্নগুলো চেক করা
+    # ASIN প্যাটার্নগুলো চেক করা
     regex_list = [
         r"/dp/([A-Z0-9]{10})",
         r"/gp/product/([A-Z0-9]{10})",
         r"/product/([A-Z0-9]{10})",
         r"dp/([A-Z0-9]{10})",
-        r"aadp/([A-Z0-9]{10})", # মোবাইল লিংক
-        r"/[A-Z0-9]{10}"       # শর্ট লিংক প্যাটার্ন
+        r"/[A-Z0-9]{10}" 
     ]
-    
     for regex in regex_list:
         match = re.search(regex, url)
         if match:
-            # ১০ ক্যারেক্টারের সঠিক ASIN কিনা ডাবল চেক
             asin = match.group(1)
             if len(asin) == 10 and asin.isalnum():
                 return asin
     return None
 
 def get_high_res_image(img_url):
-    """Amazon এর থাম্বনেইল ইমেজকে হাই-রেজোলিউশনে কনভার্ট করে"""
     if not img_url or img_url == "N/A":
         return "https://via.placeholder.com/150"
-    # _AC_... অংশটি সরিয়ে দিলে অরিজিনাল সাইজ পাওয়া যায়
     return re.sub(r'\._AC_.*?\.', '.', img_url)
-
 # --- Local Storage Functions for Content Planner ---
 PLANNER_FILE = 'content_planner.json'
 
@@ -270,11 +264,11 @@ Competitors: {chr(10).join([c.replace('- ', '').split('](')[1][:-1] for c in com
                 st.error(f"Error: {e}")
 
 # ==========================
-# TAB 2: AMAZON PRODUCT INFO (SMART DOMAIN FIX)
+# TAB 2: AMAZON PRODUCT INFO (FIXED PARAMETERS)
 # ==========================
 with tab_amazon:
     st.subheader("Amazon Product Gallery & Details")
-    st.info("💡 অ্যামাজন লিংক দিন। আমরা সব ইমেজ গ্যালারি আকারে দেখাব এবং টাইটেল কপি করার ব্যবস্থা করে দেব।")
+    st.info("💡 অ্যামাজন লিংক দিন। আমরা সব ইমেজ গ্যালারি আকারে দেখাব।")
     
     product_url = st.text_input("Paste Amazon Product Link:", placeholder="https://www.amazon.com/dp/B08...")
     amazon_submit = st.button("📦 Get Product Images & Info")
@@ -289,76 +283,78 @@ with tab_amazon:
             domain = get_domain_from_url(product_url)
             
             if not asin:
-                st.error("❌ লিংকটি সঠিক নয় বা ASIN পাওয়া যায়নি। দয়া করে 'amazon.com/dp/...' ফরম্যাটের লিংক দিন।")
+                st.error("❌ লিংকটি সঠিক নয় বা ASIN পাওয়া যায়নি।")
             else:
                 try:
-                    with st.spinner(f'Fetching details for ASIN: {asin} from {domain}...'):
+                    with st.spinner(f'Searching for ASIN: {asin} on {domain}...'):
                         found_data = False
                         error_log = ""
                         
-                        # Data placeholders
+                        # Placeholders
                         product_title = "N/A"
                         product_price = "Check on Amazon"
                         product_rating = "N/A"
                         image_list = [] 
 
-                        # Step 1: Amazon Product API
+                        # --- STRATEGY 1: Product API (Best for details) ---
                         try:
                             params = {
                                 "engine": "amazon_product",
-                                "product_id": asin,
-                                "domain": domain, # ডাইনামিক ডোমেইন ব্যবহার করা হচ্ছে
+                                "product_id": asin, # অফিসিয়াল প্যারামিটার
+                                "asin": asin,       # ব্যাকআপ প্যারামিটার (ফিক্স)
+                                "domain": domain,
                                 "api_key": api_key
                             }
                             search = GoogleSearch(params)
                             results = search.get_dict()
 
-                            if "product_result" in results:
+                            # Error Handling inside API response
+                            if "error" in results:
+                                error_log = results["error"]
+                            elif "product_result" in results:
                                 product = results["product_result"]
                                 product_title = product.get("title", "N/A")
                                 product_rating = product.get("rating", "N/A")
                                 if "price" in product:
                                     product_price = product["price"]
                                 
-                                # Fetch ALL Images
+                                # Images
                                 if "images" in product and len(product["images"]) > 0:
                                     for img in product["images"]:
                                         raw_link = img.get("link") if isinstance(img, dict) else img
-                                        hd_link = get_high_res_image(raw_link)
-                                        if hd_link not in image_list:
-                                            image_list.append(hd_link)
+                                        image_list.append(get_high_res_image(raw_link))
                                 else:
-                                    main_img = product.get("main_image", "N/A")
-                                    image_list.append(get_high_res_image(main_img))
+                                    image_list.append(get_high_res_image(product.get("main_image", "N/A")))
                                 
                                 found_data = True
-                            elif "error" in results:
-                                error_log = results["error"]
-                                
                         except Exception as e:
-                            error_log = f"Amazon Product API: {str(e)}"
+                            error_log = f"Product API Error: {str(e)}"
 
-                        # Step 2: Fallback to Search API (If Product page fails)
+                        # --- STRATEGY 2: Search API (Robust Backup) ---
+                        # যদি প্রথমটা ফেইল করে বা 'Missing asin' বলে, তখন আমরা সার্চ ইঞ্জিন ব্যবহার করব
                         if not found_data:
                             try:
-                                params_fallback = {
+                                params_search = {
                                     "engine": "amazon",
-                                    "q": asin,
+                                    "q": asin,        # এখানে আমরা ASIN দিয়ে সার্চ করছি
                                     "domain": domain,
                                     "api_key": api_key
                                 }
-                                search_fallback = GoogleSearch(params_fallback)
+                                search_fallback = GoogleSearch(params_search)
                                 results = search_fallback.get_dict()
                                 
                                 if "organic_results" in results and len(results["organic_results"]) > 0:
                                     item = results["organic_results"][0]
                                     product_title = item.get("title", "N/A")
+                                    product_price = item.get("price", "Check on Amazon")
+                                    product_rating = item.get("rating", "N/A")
                                     raw_image = item.get("thumbnail", "N/A")
                                     image_list.append(get_high_res_image(raw_image))
                                     found_data = True
                             except Exception as e:
-                                error_log += f" | Fallback: {str(e)}"
+                                error_log += f" | Search API Error: {str(e)}"
 
+                        # --- DISPLAY RESULTS ---
                         if found_data:
                             st.success("✅ ডাটা লোড হয়েছে!")
                             
@@ -370,22 +366,24 @@ with tab_amazon:
                             c2.metric("Rating", f"⭐ {product_rating}")
                             
                             st.divider()
-                            st.markdown(f"### 🖼️ Image Gallery ({len(image_list)} images found)")
-                            st.info("লিংক কপি করতে নিচের বক্সে ক্লিক করুন।")
+                            st.markdown(f"### 🖼️ Image Gallery ({len(image_list)} found)")
+                            
+                            # Remove duplicates preserving order
+                            seen = set()
+                            unique_images = [x for x in image_list if not (x in seen or seen.add(x))]
 
                             cols = st.columns(3)
-                            for i, img_link in enumerate(image_list):
+                            for i, img_link in enumerate(unique_images):
                                 with cols[i % 3]:
                                     with st.container(border=True):
                                         st.image(img_link, use_container_width=True)
-                                        st.caption(f"Image Link #{i+1}")
+                                        st.caption(f"Link #{i+1}")
                                         st.code(img_link, language=None)
-                                        
                         else:
                             st.error(f"দুঃখিত, কোনো তথ্য পাওয়া যায়নি।")
-                            st.markdown(f"**কারণ হতে পারে:**\n1. ASIN `{asin}` এই ডোমেইনে নেই।\n2. SerpApi লিমিট শেষ।")
+                            st.markdown(f"**চেষ্টা করা হয়েছে:** {domain} এ ASIN `{asin}` খোঁজার।")
                             if error_log:
-                                st.caption(f"Debug Log: {error_log}")
+                                st.expander("Show Debug Log").write(error_log)
                                 
                 except Exception as e:
                     st.error(f"System Error: {e}")
@@ -780,5 +778,6 @@ with tab_ocr:
                         st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
                         st.caption(f"Details: {e}")
                         st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
+
 
 
