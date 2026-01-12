@@ -809,3 +809,120 @@ with tab_ocr:
                         st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
                         st.caption(f"Details: {e}")
                         st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
+
+# ==========================
+# TAB 8: QUICK WRITER (SMART TEMPLATE)
+# ==========================
+with tab_writer:
+    st.header("⚡ Smart Article Generator (Fill-in-the-Blanks)")
+    st.info("এটি একটি 'Rule-Based' রাইটার। এটি আপনার দেওয়া তথ্যগুলোকে সুন্দর বাক্যে সাজিয়ে একটি এসইও ফ্রেন্ডলি ড্রাফট তৈরি করে দেবে।")
+
+    # --- INPUT SECTION ---
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            w_product = st.text_input("Product Name:", placeholder="Ex: Hugo Adjustable Cane")
+            w_keyword = st.text_input("Target Keyword:", placeholder="Ex: best walking cane for seniors")
+            w_audience = st.text_input("Target Audience:", placeholder="Ex: elderly people")
+        with col2:
+            w_rating = st.slider("Product Rating:", 1.0, 5.0, 4.5)
+            w_price_type = st.selectbox("Price Range:", ["Budget-Friendly", "Mid-Range", "Premium/Expensive"])
+    
+    st.write("---")
+    
+    col3, col4 = st.columns(2)
+    with col3:
+        st.markdown("**🔹 Key Features (প্রতি লাইনে একটি করে ফিচার লিখুন):**")
+        w_features = st.text_area("Features:", height=150, placeholder="Lightweight aluminum body\nErgonomic cushion handle\nAdjustable height settings")
+    with col4:
+        st.markdown("**🔹 Pros & Cons (প্রতি লাইনে একটি):**")
+        w_pros = st.text_area("Pros:", height=70, placeholder="Easy to carry\nVery durable")
+        w_cons = st.text_area("Cons:", height=70, placeholder="Limited color options")
+
+    # --- GENERATOR LOGIC ---
+    if st.button("📝 Generate Article Draft", type="primary"):
+        if w_product and w_keyword and w_features:
+            
+            # 1. Processing Lists
+            # ফিচারগুলোকে লিস্টে ভাগ করা এবং প্যারাগ্রাফে রূপান্তর করা
+            feat_list = [f.strip() for f in w_features.split('\n') if f.strip()]
+            pros_list = [p.strip() for p in w_pros.split('\n') if p.strip()]
+            cons_list = [c.strip() for c in w_cons.split('\n') if c.strip()]
+            
+            # ফিচারগুলোকে একটু বিস্তারিত বাক্যে রূপান্তর করা (Sentence Expansion)
+            expanded_features = ""
+            for i, feat in enumerate(feat_list):
+                starters = [
+                    f"First and foremost, the **{w_product}** comes with {feat}.",
+                    f"Another significant aspect is the {feat}, which makes it stand out.",
+                    f"Users will also appreciate the {feat}, ensuring a great experience.",
+                    f"Furthermore, the inclusion of {feat} adds tremendous value."
+                ]
+                # ঘুরিয়ে ফিরিয়ে বাক্য ব্যবহার করা
+                sentence = starters[i % len(starters)] 
+                expanded_features += f"- {sentence} This is particularly useful for {w_audience} because it solves common daily struggles.\n"
+
+            # 2. Building the Article (THE TEMPLATE)
+            article_body = f"""
+# {w_product} Review: The Best Choice for {w_keyword}?
+
+## Introduction
+Finding the **{w_keyword}** can be a daunting task, especially with so many options available in the market today. Whether you are looking for comfort, durability, or style, making the right choice is crucial.
+
+Today, we are diving deep into the **{w_product}**. This product has been gaining attention among {w_audience} for its impressive build quality and features. In this review, we will analyze why this might be the perfect solution for your needs.
+
+---
+
+## At a Glance
+* **Product Name:** {w_product}
+* **Rating:** {w_rating}/5 Stars
+* **Price Category:** {w_price_type}
+* **Best For:** {w_audience} looking for {w_keyword}
+
+---
+
+## In-Depth Features Analysis
+Why should you consider buying the {w_product}? Let's look at the key features that set it apart from the competition.
+
+{expanded_features}
+
+These features combined make the {w_product} a top contender in the {w_keyword} category.
+
+---
+
+## Pros and Cons
+No product is perfect. Here is a transparent look at what we liked and what could be improved.
+
+### ✅ What We Like (Pros)
+{chr(10).join([f"* **{p}**: This is a major advantage for daily use." for p in pros_list])}
+
+### ❌ What We Don't Like (Cons)
+{chr(10).join([f"* {c}: While not a dealbreaker, it is something to keep in mind." for c in cons_list])}
+
+---
+
+## Who is this for?
+If you are **{w_audience}**, then the **{w_product}** is designed specifically with you in mind. Its {w_price_type} price point makes it an attractive option without compromising on quality. 
+
+If you prioritize {feat_list[0] if feat_list else 'quality'} and {feat_list[1] if len(feat_list)>1 else 'performance'}, this is an investment worth making.
+
+---
+
+## Final Verdict
+To conclude, the **{w_product}** offers excellent value for money. With a rating of **{w_rating}/5**, it delivers on its promises.
+
+For anyone searching for a reliable **{w_keyword}**, we highly recommend checking this out. It checks all the boxes for comfort, usability, and durability.
+
+**[Check Latest Price of {w_product} on Amazon](#)**
+            """
+            
+            # --- OUTPUT ---
+            st.success("🎉 Article Draft Generated Successfully!")
+            st.subheader("Preview:")
+            st.markdown(article_body)
+            st.divider()
+            st.subheader("Copy Code:")
+            st.text_area("Copy Markdown Code:", value=article_body, height=400)
+            
+        else:
+            st.warning("⚠️ Please fill in at least the Product Name, Keyword, and Features.")
