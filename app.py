@@ -250,8 +250,8 @@ def format_text_to_html(text, style_name):
     return html_content
 
 # --- TABS ---
-# এখানে "⚡ Smart Writer" নতুন যুক্ত করা হয়েছে
-tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, tab_ocr, tab_writer = st.tabs([
+# লিস্টের শেষে "⭐ Schema Gen" যুক্ত করা হয়েছে
+tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, tab_ocr, tab_writer, tab_table, tab_schema = st.tabs([
     "🔎 SEO Research", 
     "🛒 Amazon Scraper", 
     "🎨 Affiliate Code",
@@ -259,7 +259,9 @@ tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, t
     "🗂️ Content Planner", 
     "📝 Formatter",
     "📷 Image to Text",
-    "⚡ Smart Writer"
+    "⚡ Smart Writer",
+    "📊 Comp. Table",
+    "⭐ Schema Gen"  # <--- নতুন ট্যাব
 ])
 # ==========================
 # TAB 1: SEO RESEARCH (Keep Original)
@@ -952,5 +954,45 @@ For anyone searching for a reliable **{w_keyword}**, we highly recommend checkin
             
         else:
             st.warning("⚠️ Please fill in at least the Product Name, Keyword, and Features.")
+# ==========================
+# TAB 10: REVIEW SCHEMA GENERATOR (JSON-LD)
+# ==========================
+with tab_schema:
+    st.header("⭐ SEO Review Schema Generator (JSON-LD)")
+    st.info("এটি Google Search এ আপনার আর্টিকেলের নিচে স্টার রেটিং দেখানোর জন্য কোড তৈরি করবে।")
 
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        s_product_name = st.text_input("Product Name (Schema):", placeholder="e.g. Hugo Walking Cane")
+        s_sku = st.text_input("SKU / ASIN (Optional):", placeholder="B083NJ6F5J")
+        s_brand = st.text_input("Brand Name:", placeholder="Hugo")
+        
+    with col2:
+        s_rating = st.slider("Your Rating:", 1.0, 5.0, 4.5, step=0.1)
+        s_author = st.text_input("Author Name (Your Name):", placeholder="Tariqul Islam")
+        s_date = st.date_input("Review Date:")
+        s_summary = st.text_area("Short Review Summary:", placeholder="Great product with excellent durability...", height=100)
 
+    st.divider()
+
+    if st.button("Generate Schema Code"):
+        if s_product_name and s_author:
+            # Constructing JSON-LD Dictionary
+            schema_data = {
+                "@context": "https://schema.org/",
+                "@type": "Product",
+                "name": s_product_name,
+                "image": "", # Optional, can be added if needed
+                "description": s_summary,
+                "brand": {
+                    "@type": "Brand",
+                    "name": s_brand if s_brand else "Unknown"
+                },
+                "sku": s_sku if s_sku else "",
+                "review": {
+                    "@type": "Review",
+                    "reviewRating": {
+                        "@type": "Rating",
+                        "ratingValue": str(s_rating),
+                        "bestRating": "5"
