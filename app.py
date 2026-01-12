@@ -70,7 +70,7 @@ def convert_image_to_webp(image_file):
     except Exception as e:
         return None
 
-# [UPDATED] Amazon Scraper Function (Price/Rating removed, Desc added)
+# [UPDATED] Amazon Scraper Function (With Bullet Points for Pros)
 def get_amazon_product_data(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -111,7 +111,18 @@ def get_amazon_product_data(url):
                 paragraphs = aplus_div.find_all("p")
                 description_text = "\n\n".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
 
-        # 4. Description Images
+        # 4. [NEW] Bullet Points (Pros)
+        bullet_points = []
+        bullets_ul = soup.find(id="feature-bullets")
+        if bullets_ul:
+            # প্রথম ৫টি পয়েন্ট নিচ্ছি
+            for li in bullets_ul.find_all("li")[:5]:
+                text = li.get_text(strip=True)
+                # হিডেন টেক্সট বাদ দেওয়া
+                if text and not "hidden" in str(li):
+                    bullet_points.append(text)
+
+        # 5. Description Images
         description_images = []
         target_divs = [soup.find("div", {"id": "productDescription"}), soup.find("div", {"id": "aplus"})]
         
@@ -129,15 +140,12 @@ def get_amazon_product_data(url):
             "title": product_title,
             "gallery_images": gallery_images,
             "description_text": description_text[:3000] + "..." if len(description_text) > 3000 else description_text,
+            "bullet_points": bullet_points, # নতুন ডাটা
             "description_images": description_images
         }
     
     except Exception as e:
         return {"error": str(e)}
-
-def extract_asin(url):
-    match = re.search(r"/([A-Z0-9]{10})(?:[/?]|$)", url)
-    return match.group(1) if match else "Unknown"
 
 # --- Content Planner Storage ---
 PLANNER_FILE = 'content_planner.json'
@@ -315,15 +323,15 @@ Competitors: {chr(10).join([c.replace('- ', '').split('](')[1][:-1] for c in com
                 st.error(f"Error: {e}")
 
 # ==========================
-# TAB 2: AMAZON PRODUCT INFO (UPDATED: Title, Gallery, Desc, No Price)
+# TAB 2: AMAZON PRODUCT INFO (UPDATED UI)
 # ==========================
 with tab_amazon:
-    st.subheader("🛒 Amazon Name, Description & Images")
-    st.info("লিংক দিন। আমরা টাইটেল, গ্যালারি ইমেজ, ডিসক্রিপশন টেক্সট এবং ডিসক্রিপশনের ভেতরের ছবিগুলো বের করে দেব।")
+    st.subheader("🛒 Amazon Name, Pros & Images")
+    st.info("লিংক দিন। আমরা টাইটেল, ছবি এবং 'About this item' থেকে Pros (Features) বের করে দেব।")
     
     amazon_url = st.text_input("Enter Amazon Product URL:", placeholder="https://www.amazon.com/dp/...")
     
-    if st.button("Get Content"):
+    if st.button("Get Product Data"):
         if amazon_url:
             with st.spinner("Scraping Content from Amazon..."):
                 data = get_amazon_product_data(amazon_url)
@@ -338,8 +346,19 @@ with tab_amazon:
                     st.code(data['title'], language=None)
                     
                     st.divider()
+
+                    # 2. [NEW] PROS Section
+                    st.markdown("### ✅ Potential Pros (Features)")
+                    if data.get('bullet_points'):
+                        # বুলেট পয়েন্টগুলো সুন্দর করে সাজিয়ে দেখানো
+                        pros_text = "\n".join([f"✅ {bp}" for bp in data['bullet_points']])
+                        st.text_area("Copy these as Pros:", value=pros_text, height=200)
+                    else:
+                        st.warning("No bullet points found. You may need to write Pros manually.")
+
+                    st.divider()
                     
-                    # 2. Main Gallery Images
+                    # 3. Main Gallery Images
                     st.markdown(f"### 🖼️ Main Gallery Images ({len(data['gallery_images'])})")
                     if data['gallery_images']:
                         cols = st.columns(3)
@@ -352,7 +371,7 @@ with tab_amazon:
 
                     st.divider()
 
-                    # 3. Description Text
+                    # 4. Description Text
                     st.markdown("### 📝 Description Summary")
                     if data['description_text']:
                         st.text_area("Product Description Content:", value=data['description_text'], height=250)
@@ -361,10 +380,8 @@ with tab_amazon:
 
                     st.divider()
 
-                    # 4. Description Images (Lifestyle/Features)
+                    # 5. Description Images
                     st.markdown(f"### 📸 Images from Description ({len(data['description_images'])})")
-                    st.caption("এই ছবিগুলো প্রোডাক্ট ডিসক্রিপশন বা A+ Content এর ভেতর থেকে নেওয়া।")
-                    
                     if data['description_images']:
                         d_cols = st.columns(3)
                         for i, d_img in enumerate(data['description_images']):
@@ -372,11 +389,10 @@ with tab_amazon:
                                 st.image(d_img, use_container_width=True)
                                 st.code(d_img, language=None)
                     else:
-                        st.info("ডিসক্রিপশনের ভেতরে কোনো অতিরিক্ত ছবি পাওয়া যায়নি।")
+                        st.info("No additional images found.")
 
         else:
             st.warning("Please enter a URL.")
-
 # ==========================
 # TAB 3: AFFILIATE CODE GENERATOR (Keep Original)
 # ==========================
@@ -936,4 +952,5 @@ For anyone searching for a reliable **{w_keyword}**, we highly recommend checkin
             
         else:
             st.warning("⚠️ Please fill in at least the Product Name, Keyword, and Features.")
+
 
