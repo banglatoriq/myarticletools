@@ -260,6 +260,7 @@ tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, t
     "📝 Formatter",
     "📷 Image to Text",
     "⚡ Smart Writer",
+    "📊 Comp. Table",
     "⭐ Schema Gen"  # <--- নতুন ট্যাব
 ])
 # ==========================
@@ -1017,4 +1018,5 @@ with tab_schema:
             
         else:
             st.warning("Please enter Product Name and Author Name.")
+
 
