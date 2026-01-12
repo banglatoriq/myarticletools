@@ -1,5 +1,5 @@
 import streamlit as st
-from serpapi import GoogleSearch # SEO এর জন্য এটা থাকছে
+from serpapi import GoogleSearch 
 import re
 import json
 import os
@@ -9,6 +9,7 @@ import pytesseract
 import streamlit.components.v1 as components
 import requests
 from bs4 import BeautifulSoup
+import io  # ইমেজ অপটিমাইজারের জন্য নতুন যুক্ত করা হয়েছে
 
 # --- পেজের কনফিগারেশন ---
 st.set_page_config(page_title="SEO & Amazon Tool", page_icon="🛠️", layout="wide")
@@ -18,7 +19,7 @@ st.title("🛠️ All-in-One Content & Affiliate Tool")
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # --- API Key Management (শুধুমাত্র SEO Research এর জন্য এখন লাগবে) ---
+    # --- API Key Management ---
     if 'api_key' not in st.session_state:
         query_params = st.query_params
         st.session_state.api_key = query_params.get("api_key", "")
@@ -48,7 +49,19 @@ with st.sidebar:
 
 # --- Helper Functions ---
 
-# Amazon Scraper Function (আপনার দেওয়া কোড ইমপ্লিমেন্ট করা হয়েছে)
+# [NEW] Image Optimizer Function
+def convert_image_to_webp(image_file):
+    """ইমেজকে WebP ফরম্যাটে অপটিমাইজ করে কনভার্ট করে"""
+    try:
+        image = Image.open(image_file)
+        buffer = io.BytesIO()
+        image.save(buffer, format="WEBP", optimize=True, quality=80)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        return None
+
+# [UPDATED] Amazon Scraper Function (Price/Rating removed, Desc added)
 def get_amazon_product_data(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -66,46 +79,48 @@ def get_amazon_product_data(url):
         title_tag = soup.find(id="productTitle")
         product_title = title_tag.get_text(strip=True) if title_tag else "Title Not Found"
 
-        # 2. Price (Try multiple selectors)
-        price = "Check on Amazon"
-        price_tag = soup.find("span", class_="a-offscreen")
-        if price_tag:
-            price = price_tag.get_text(strip=True)
-
-        # 3. Rating
-        rating = "N/A"
-        rating_tag = soup.find("span", class_="a-icon-alt")
-        if rating_tag:
-            rating_text = rating_tag.get_text(strip=True)
-            if "out of" in rating_text:
-                rating = rating_text.split("out of")[0].strip()
-
-        # 4. Images (Try to get Gallery)
-        image_list = []
-        
-        # Method A: JSON Data for Gallery
+        # 2. Main Gallery Images
+        gallery_images = []
         img_container = soup.find("img", {"id": "landingImage"})
         if img_container and img_container.get("data-a-dynamic-image"):
             json_data = img_container.get("data-a-dynamic-image")
-            # JSON keys are the Image URLs
-            image_urls = list(json.loads(json_data).keys())
-            image_list.extend(image_urls)
+            gallery_images = list(json.loads(json_data).keys())
         
-        # Method B: Fallback Regex
-        if not image_list:
+        # Fallback for gallery
+        if not gallery_images:
             match = re.search(r'"hiRes":"(.*?)"', response.text)
-            if match:
-                image_list.append(match.group(1))
+            if match: gallery_images.append(match.group(1))
 
-        # Final Fallback
-        if not image_list:
-            image_list.append("https://via.placeholder.com/300?text=Image+Not+Found")
+        # 3. Description Text (Summary)
+        description_text = ""
+        desc_div = soup.find("div", {"id": "productDescription"})
+        if desc_div:
+            description_text = desc_div.get_text(separator="\n", strip=True)
+        else:
+            aplus_div = soup.find("div", {"id": "aplus"})
+            if aplus_div:
+                paragraphs = aplus_div.find_all("p")
+                description_text = "\n\n".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+
+        # 4. Description Images
+        description_images = []
+        target_divs = [soup.find("div", {"id": "productDescription"}), soup.find("div", {"id": "aplus"})]
+        
+        for container in target_divs:
+            if container:
+                imgs = container.find_all("img")
+                for img in imgs:
+                    src = img.get("data-src") or img.get("src")
+                    if src and "http" in src:
+                        if "sprite" not in src and "pixel" not in src and ".gif" not in src:
+                            if src not in description_images and src not in gallery_images:
+                                description_images.append(src)
 
         return {
             "title": product_title,
-            "price": price,
-            "rating": rating,
-            "images": image_list
+            "gallery_images": gallery_images,
+            "description_text": description_text[:3000] + "..." if len(description_text) > 3000 else description_text,
+            "description_images": description_images
         }
     
     except Exception as e:
@@ -134,24 +149,102 @@ def save_planner_data(data):
 
 # --- Text Formatter ---
 def format_text_to_html(text, style_name):
-    # (সংক্ষিপ্ত করার জন্য স্টাইল ডিকশনারি আগের মতই থাকবে, কোড বড় না করার জন্য স্কিপ করছি, কিন্তু কাজ করবে)
-    # আপনি আগের কোড থেকে styles অংশটুকু হুবহু রেখে দেবেন।
-    # For brevity in full response, assuming standard HTML logic here.
-    return f"<div style='font-family: sans-serif; padding: 20px;'>{text.replace(chr(10), '<br>')}</div>" 
-    # NOTE: মূল কোডে আপনার আগের format_text_to_html ফাংশনটি ব্যবহার করবেন।
+    # আপনার অরিজিনাল স্টাইল কোড এখানে অক্ষত রাখা হয়েছে
+    styles = {
+        "Modern Clean": {
+            "div": "font-family: 'Inter', 'Segoe UI', sans-serif; line-height: 1.7; color: #333; max-width: 100%;",
+            "h1": "color: #111; font-weight: 800; margin-top: 0.5em; margin-bottom: 0.5em; font-size: 2.2em;",
+            "h2": "color: #111; font-weight: 700; margin-top: 1.5em; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; font-size: 1.8em;",
+            "h3": "color: #444; font-weight: 600; margin-top: 1.2em; font-size: 1.4em;",
+            "p": "margin-bottom: 1.2em; font-size: 17px; color: #333;",
+            "ul": "margin-bottom: 1.2em; padding-left: 20px;",
+            "li": "margin-bottom: 8px;",
+            "img": "max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0; display: block;",
+            "strong": "color: #000; font-weight: 700;"
+        },
+        "Classic Serif": {
+            "div": "font-family: 'Georgia', 'Cambria', serif; line-height: 1.8; color: #2a2a2a; font-size: 18px; max-width: 100%;",
+            "h1": "font-family: 'Georgia', serif; color: #000; margin-top: 40px; font-size: 32px; font-weight: normal;",
+            "h2": "font-family: 'Georgia', serif; color: #000; margin-top: 40px; font-size: 28px; font-weight: normal; border-bottom: 1px solid #ccc; padding-bottom: 5px;",
+            "h3": "font-family: 'Georgia', serif; color: #333; margin-top: 30px; font-style: italic; font-size: 24px;",
+            "p": "margin-bottom: 24px;",
+            "ul": "margin-bottom: 24px; padding-left: 25px;",
+            "li": "margin-bottom: 10px;",
+            "img": "max-width: 100%; height: auto; border: 1px solid #ddd; padding: 5px; margin: 20px auto; display: block;",
+            "strong": "font-weight: bold; color: #000;"
+        },
+        "Magazine Focus": {
+            "div": "font-family: 'Merriweather', serif; line-height: 1.9; color: #222; max-width: 100%; background: #fff; padding: 20px; box-sizing: border-box;",
+            "h1": "font-family: 'Montserrat', sans-serif; text-transform: uppercase; letter-spacing: 1px; color: #2c3e50; margin-top: 20px; font-size: 36px;",
+            "h2": "font-family: 'Montserrat', sans-serif; text-transform: uppercase; letter-spacing: 1px; color: #d35400; border-left: 5px solid #d35400; padding-left: 15px; margin-top: 40px; font-size: 26px;",
+            "h3": "font-family: 'Montserrat', sans-serif; color: #2c3e50; margin-top: 30px; font-size: 22px;",
+            "p": "margin-bottom: 20px; font-size: 18px;",
+            "ul": "list-style-type: square; color: #d35400; margin-bottom: 20px; padding-left: 20px;",
+            "li": "margin-bottom: 10px; color: #222;",
+            "img": "width: 100%; height: auto; margin: 30px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1);",
+            "strong": "font-weight: bold; color: #222;"
+        }
+    }
+    
+    current_style = styles.get(style_name, styles["Modern Clean"])
+    
+    html_content = f'<div style="{current_style["div"]}">\n'
+    
+    lines = text.split('\n')
+    in_list = False
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if in_list:
+                html_content += "</ul>\n"
+                in_list = False
+            continue
+            
+        if line.startswith('### '):
+            html_content += f'<h3 style="{current_style["h3"]}">{line[4:]}</h3>\n'
+        elif line.startswith('## '):
+            html_content += f'<h2 style="{current_style["h2"]}">{line[3:]}</h2>\n'
+        elif line.startswith('# '):
+            html_content += f'<h1 style="{current_style["h1"]}">{line[2:]}</h1>\n'
+        elif line.startswith('- ') or line.startswith('* '):
+            if not in_list:
+                html_content += f'<ul style="{current_style["ul"]}">\n'
+                in_list = True
+            html_content += f'<li style="{current_style["li"]}">{line[2:]}</li>\n'
+        elif line.startswith('![') and '](' in line:
+            try:
+                alt = line.split('![')[1].split('](')[0]
+                src = line.split('](')[1].split(')')[0]
+                html_content += f'<img src="{src}" alt="{alt}" style="{current_style["img"]}">\n'
+            except:
+                html_content += f'<p style="{current_style["p"]}">{line}</p>\n'
+        else:
+            if in_list:
+                html_content += "</ul>\n"
+                in_list = False
+            line = re.sub(r'\*\*(.*?)\*\*', f'<strong style="{current_style["strong"]}">\\1</strong>', line)
+            html_content += f'<p style="{current_style["p"]}">{line}</p>\n'
+            
+    if in_list:
+        html_content += "</ul>\n"
 
-# --- TABS ---
-tab_seo, tab_amazon, tab_affiliate, tab_planner, tab_formatter, tab_ocr = st.tabs([
+    html_content += "</div>"
+    return html_content
+
+# --- TABS (Updated with Optimizer) ---
+tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, tab_ocr = st.tabs([
     "🔎 SEO Research", 
-    "🛒 Amazon Product Info", 
-    "🎨 Affiliate Code Gen", 
+    "🛒 Amazon Scraper", 
+    "🎨 Affiliate Code",
+    "🚀 Image Optimizer", 
     "🗂️ Content Planner", 
     "📝 Blog Formatter",
     "📷 Image to Text"
 ])
 
 # ==========================
-# TAB 1: SEO RESEARCH (SerpApi Still Needed Here)
+# TAB 1: SEO RESEARCH (Keep Original)
 # ==========================
 with tab_seo:
     st.subheader("Google Search Analysis")
@@ -184,135 +277,98 @@ with tab_seo:
                     search = GoogleSearch(params)
                     results = search.get_dict()
                     
-                    # (Display logic remains same as previous code)
+                    snippet_content = "No direct snippet found."
+                    if "answer_box" in results:
+                        box = results["answer_box"]
+                        if "snippet" in box: snippet_content = box["snippet"]
+                        elif "answer" in box: snippet_content = box["answer"]
+                        elif "list" in box: snippet_content = "\n".join(box["list"])
+
+                    lsi = [i['query'] for i in results.get("related_searches", [])]
+                    faqs = [q['question'] for q in results.get("related_questions", [])]
+                    comps = []
+                    for res in results.get("organic_results", [])[:10]:
+                        comps.append(f"- [{res.get('title')}]({res.get('link')})")
+
                     st.success("✅ SEO Data Found!")
-                    st.write("Results displayed here...") # Placeholder for full display code
+                    
+                    prompt_text = f"""
+Main Keyword: "{keyword}"
+Snippet Context: "{snippet_content}"
+LSI Keywords: {', '.join(lsi)}
+FAQs: {chr(10).join(['- ' + q for q in faqs])}
+Competitors: {chr(10).join([c.replace('- ', '').split('](')[1][:-1] for c in comps])}
+"""
+                    st.text_area("Copy for AI Writer:", value=prompt_text, height=200)
                     
             except Exception as e:
                 st.error(f"Error: {e}")
 
 # ==========================
-# TAB 2: AMAZON PRODUCT INFO (UPDATED: Title, Gallery, Description & Desc Images)
+# TAB 2: AMAZON PRODUCT INFO (UPDATED: Title, Gallery, Desc, No Price)
 # ==========================
 with tab_amazon:
-    st.subheader("🛒 Amazon Product Scraper")
-    st.info("Direct link scraper. Shows Title, Main Gallery, Bullet Points & Description Images.")
+    st.subheader("🛒 Amazon Name, Description & Images")
+    st.info("লিংক দিন। আমরা টাইটেল, গ্যালারি ইমেজ, ডিসক্রিপশন টেক্সট এবং ডিসক্রিপশনের ভেতরের ছবিগুলো বের করে দেব।")
     
     amazon_url = st.text_input("Enter Amazon Product URL:", placeholder="https://www.amazon.com/dp/...")
     
-    if st.button("Get Product Data"):
+    if st.button("Get Content"):
         if amazon_url:
-            with st.spinner("Scraping Amazon Data (Title, Bullets, Images)..."):
-                # --- SCRAPING LOGIC START ---
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept-Language": "en-US,en;q=0.9"
-                }
+            with st.spinner("Scraping Content from Amazon..."):
+                data = get_amazon_product_data(amazon_url)
                 
-                try:
-                    response = requests.get(amazon_url, headers=headers)
-                    soup = BeautifulSoup(response.text, "html.parser")
+                if "error" in data:
+                    st.error(f"Failed: {data['error']}")
+                else:
+                    st.success("✅ Content Extracted!")
                     
-                    # 1. Product Title
-                    title_tag = soup.find(id="productTitle")
-                    product_title = title_tag.get_text(strip=True) if title_tag else "Title Not Found"
+                    # 1. Title
+                    st.markdown("### 🏷️ Product Title")
+                    st.code(data['title'], language=None)
+                    
+                    st.divider()
                     
                     # 2. Main Gallery Images
-                    main_images = []
-                    img_container = soup.find("img", {"id": "landingImage"})
-                    if img_container and img_container.get("data-a-dynamic-image"):
-                        json_data = img_container.get("data-a-dynamic-image")
-                        main_images = list(json.loads(json_data).keys())
-                    
-                    # Fallback for main images
-                    if not main_images:
-                        match = re.search(r'"hiRes":"(.*?)"', response.text)
-                        if match: main_images.append(match.group(1))
-
-                    # 3. Product Summary (Bullet Points)
-                    bullet_points = []
-                    bullets_ul = soup.find(id="feature-bullets")
-                    if bullets_ul:
-                        for li in bullets_ul.find_all("li"):
-                            txt = li.get_text(strip=True)
-                            # Remove hidden spans or irrelevant text
-                            if txt and not "hidden" in str(li):
-                                bullet_points.append(f"• {txt}")
-                    
-                    summary_text = "\n".join(bullet_points)
-
-                    # 4. Description Images (A+ Content / Product Description)
-                    desc_images = []
-                    # Try getting images from A+ content div (aplus) or standard description
-                    desc_divs = soup.select("#aplus img, #productDescription img")
-                    
-                    for img in desc_divs:
-                        # Amazon uses data-src for lazy loading in descriptions often
-                        src = img.get("data-src") or img.get("src")
-                        if src and "gif" not in src and "pixel" not in src: # Filter tiny icons
-                            # Fix relative URLs if any
-                            if src.startswith("//"): src = "https:" + src
-                            if src not in desc_images and src not in main_images:
-                                desc_images.append(src)
-
-                    # --- DISPLAY LOGIC START ---
-                    
-                    st.success("✅ Product Found!")
-                    
-                    # --- Section A: Title ---
-                    st.markdown("### 🏷️ Product Title")
-                    st.code(product_title, language=None)
-                    
-                    st.divider()
-
-                    # --- Section B: Main Gallery Images ---
-                    st.markdown(f"### 🖼️ Main Gallery Images ({len(main_images)})")
-                    if main_images:
+                    st.markdown(f"### 🖼️ Main Gallery Images ({len(data['gallery_images'])})")
+                    if data['gallery_images']:
                         cols = st.columns(3)
-                        for i, img_link in enumerate(main_images):
+                        for i, img_link in enumerate(data['gallery_images']):
                             with cols[i % 3]:
-                                with st.container(border=True):
-                                    st.image(img_link, use_container_width=True)
-                                    st.caption("Main Image")
-                                    st.code(img_link, language=None)
+                                st.image(img_link, use_container_width=True)
+                                st.code(img_link, language=None)
                     else:
-                        st.warning("No main images found via scraping.")
+                        st.warning("No gallery images found.")
 
                     st.divider()
 
-                    # --- Section C: Product Summary (Bullets) ---
-                    st.markdown("### 📝 Product Summary (Features)")
-                    if summary_text:
-                        st.text_area("Copy Summary:", value=summary_text, height=200)
+                    # 3. Description Text
+                    st.markdown("### 📝 Description Summary")
+                    if data['description_text']:
+                        st.text_area("Product Description Content:", value=data['description_text'], height=250)
                     else:
-                        st.info("No bullet points found.")
+                        st.info("No text description found.")
 
                     st.divider()
 
-                    # --- Section D: Description Images (A+ Content) ---
-                    st.markdown(f"### 📄 Description/A+ Images ({len(desc_images)})")
-                    st.info("এই ছবিগুলো প্রোডাক্টের ডেসক্রিপশন বা A+ কন্টেন্ট থেকে নেওয়া হয়েছে।")
+                    # 4. Description Images (Lifestyle/Features)
+                    st.markdown(f"### 📸 Images from Description ({len(data['description_images'])})")
+                    st.caption("এই ছবিগুলো প্রোডাক্ট ডিসক্রিপশন বা A+ Content এর ভেতর থেকে নেওয়া।")
                     
-                    if desc_images:
-                        # Show in grid
+                    if data['description_images']:
                         d_cols = st.columns(3)
-                        for i, d_img in enumerate(desc_images):
+                        for i, d_img in enumerate(data['description_images']):
                             with d_cols[i % 3]:
-                                with st.container(border=True):
-                                    st.image(d_img, use_container_width=True)
-                                    st.caption("Desc Image")
-                                    st.code(d_img, language=None)
+                                st.image(d_img, use_container_width=True)
+                                st.code(d_img, language=None)
                     else:
-                        st.caption("No additional images found in the description.")
+                        st.info("ডিসক্রিপশনের ভেতরে কোনো অতিরিক্ত ছবি পাওয়া যায়নি।")
 
-                except Exception as e:
-                    st.error(f"Error scraping data: {str(e)}")
-                    st.caption("Tip: Amazon blocks frequent requests. Try a different product or wait a bit.")
         else:
             st.warning("Please enter a URL.")
 
 # ==========================
-# TAB 3: AFFILIATE CODE GENERATOR
+# TAB 3: AFFILIATE CODE GENERATOR (Keep Original)
 # ==========================
 with tab_affiliate:
     st.header("🎨 HTML Affiliate Code Generator")
@@ -425,7 +481,59 @@ with tab_affiliate:
         components.html(full_html_output, height=600, scrolling=True)
 
 # ==========================
-# TAB 4: CONTENT PLANNER (Updated with Grid Card View)
+# TAB 4: IMAGE OPTIMIZER (NEW FEATURE)
+# ==========================
+with tab_optimizer:
+    st.header("🚀 WebP Image Optimizer")
+    st.info("আপনার ছবি আপলোড করুন। এটি অটোমেটিক কম্প্রেস হবে এবং WebP ফরম্যাটে কনভার্ট হয়ে যাবে। এটি ব্লগের লোডিং স্পিড বাড়াতে সাহায্য করে।")
+
+    uploaded_files = st.file_uploader("Upload Images (JPG, PNG)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+
+    if uploaded_files:
+        st.divider()
+        st.subheader("🎉 Optimized Images")
+        
+        # Grid layout for results
+        cols = st.columns(3)
+        
+        for i, uploaded_file in enumerate(uploaded_files):
+            # Process each image
+            optimized_buffer = convert_image_to_webp(uploaded_file)
+            
+            if optimized_buffer:
+                # Calculate size savings (Optional visualization)
+                original_size = uploaded_file.size / 1024 # KB
+                optimized_size = optimized_buffer.getbuffer().nbytes / 1024 # KB
+                saving = original_size - optimized_size
+                saving_percent = (saving / original_size) * 100
+                
+                # Display in grid
+                with cols[i % 3]:
+                    with st.container(border=True):
+                        # Show original image preview
+                        st.image(uploaded_file, caption="Original Preview", use_container_width=True)
+                        
+                        st.markdown(f"""
+                        **Stats:**
+                        - Original: `{original_size:.1f} KB`
+                        - Optimized: `{optimized_size:.1f} KB`
+                        - Saved: **{saving_percent:.1f}%** 📉
+                        """)
+                        
+                        # Download Button
+                        file_name = os.path.splitext(uploaded_file.name)[0] + ".webp"
+                        st.download_button(
+                            label="⬇️ Download WebP",
+                            data=optimized_buffer,
+                            file_name=file_name,
+                            mime="image/webp",
+                            key=f"dl_{i}",
+                            type="primary",
+                            use_container_width=True
+                        )
+
+# ==========================
+# TAB 5: CONTENT PLANNER (Keep Original)
 # ==========================
 with tab_planner:
     st.header("🗂️ Keyword Cluster & Content Planner")
@@ -631,7 +739,7 @@ with tab_planner:
                             st.rerun()
 
 # ==========================
-# TAB 5: BLOG FORMATTER (New Feature)
+# TAB 6: BLOG FORMATTER (Keep Original)
 # ==========================
 with tab_formatter:
     st.header("📝 Blog Post Formatter")
@@ -668,7 +776,7 @@ with tab_formatter:
         st.success("HTML generated successfully! Copy the code above and paste it into your CMS (WordPress Custom HTML block, Blogger HTML view, etc.).")
 
 # ==========================
-# TAB 6: IMAGE TO TEXT (OCR)
+# TAB 7: IMAGE TO TEXT (Keep Original)
 # ==========================
 with tab_ocr:
     st.header("📷 Image to Text (OCR)")
@@ -701,8 +809,3 @@ with tab_ocr:
                         st.error("Error during extraction. Please make sure Tesseract OCR is installed on the server.")
                         st.caption(f"Details: {e}")
                         st.info("Tip: If you are deploying on Streamlit Cloud, ensure `packages.txt` contains `tesseract-ocr`.")
-
-
-
-
-
