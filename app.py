@@ -996,3 +996,25 @@ with tab_schema:
                         "@type": "Rating",
                         "ratingValue": str(s_rating),
                         "bestRating": "5"
+                    },
+                    "author": {
+                        "@type": "Person",
+                        "name": s_author
+                    },
+                    "datePublished": str(s_date),
+                    "reviewBody": s_summary
+                }
+            }
+
+            # Convert to nicely formatted JSON string
+            json_output = f"""<script type="application/ld+json">
+{json.dumps(schema_data, indent=4)}
+</script>"""
+
+            st.success("✅ Schema Code Generated!")
+            st.subheader("Copy & Paste this into your Blog Post (Custom HTML):")
+            st.code(json_output, language='html')
+            st.caption("টিপস: এই কোডটি আপনার ওয়ার্ডপ্রেস পোস্টের 'Custom HTML' ব্লকে পেস্ট করবেন।")
+            
+        else:
+            st.warning("Please enter Product Name and Author Name.")
