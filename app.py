@@ -20,6 +20,7 @@ with st.sidebar:
     st.header("⚙️ Settings")
     
     # --- API Key Management ---
+    # এটি শুধুমাত্র SEO Research ট্যাবের জন্য লাগে
     if 'api_key' not in st.session_state:
         query_params = st.query_params
         st.session_state.api_key = query_params.get("api_key", "")
@@ -32,6 +33,7 @@ with st.sidebar:
 
     api_key = st.session_state.api_key
     
+    # URL এ Key সেভ রাখার অপশন
     save_url = st.checkbox("Save Key to URL", value=(st.query_params.get("api_key") == api_key) if api_key else False)
     if save_url and api_key:
         st.query_params["api_key"] = api_key
@@ -39,6 +41,8 @@ with st.sidebar:
         del st.query_params["api_key"]
     
     st.divider()
+    
+    # --- Country Selection ---
     country = st.selectbox("Select Target Country (SEO):", ["United States", "United Kingdom", "Bangladesh", "India"])
     location_map = {
         "United States": {"gl": "us", "loc": "United States", "domain": "google.com"},
@@ -46,6 +50,11 @@ with st.sidebar:
         "Bangladesh": {"gl": "bd", "loc": "Bangladesh", "domain": "google.com.bd"},
         "India": {"gl": "in", "loc": "India", "domain": "google.co.in"}
     }
+    
+    st.divider()
+    st.markdown("### 👨‍💻 Info")
+    st.caption("All-in-One Content & Affiliate Tool")
+    st.caption("Developed for **Tariqul Islam**")
 
 # --- Helper Functions ---
 
@@ -232,17 +241,18 @@ def format_text_to_html(text, style_name):
     html_content += "</div>"
     return html_content
 
-# --- TABS (Updated with Optimizer) ---
-tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, tab_ocr = st.tabs([
+# --- TABS ---
+# এখানে "⚡ Smart Writer" নতুন যুক্ত করা হয়েছে
+tab_seo, tab_amazon, tab_affiliate, tab_optimizer, tab_planner, tab_formatter, tab_ocr, tab_writer = st.tabs([
     "🔎 SEO Research", 
     "🛒 Amazon Scraper", 
     "🎨 Affiliate Code",
     "🚀 Image Optimizer", 
     "🗂️ Content Planner", 
-    "📝 Blog Formatter",
-    "📷 Image to Text"
+    "📝 Formatter",
+    "📷 Image to Text",
+    "⚡ Smart Writer"
 ])
-
 # ==========================
 # TAB 1: SEO RESEARCH (Keep Original)
 # ==========================
@@ -926,3 +936,4 @@ For anyone searching for a reliable **{w_keyword}**, we highly recommend checkin
             
         else:
             st.warning("⚠️ Please fill in at least the Product Name, Keyword, and Features.")
+
