@@ -6,6 +6,7 @@ import os
 import pandas as pd
 from PIL import Image
 import pytesseract
+import streamlit.components.v1 as components
 
 # --- পেজের কনফিগারেশন ---
 st.set_page_config(page_title="SEO & Amazon Tool", page_icon="🛠️", layout="wide")
@@ -47,7 +48,8 @@ with st.sidebar:
         "India": {"gl": "in", "loc": "India", "domain": "google.co.in"}
     }
 
-# --- ASIN বের করার ফাংশন ---
+# --- Helper Functions ---
+
 def extract_asin(url):
     regex_list = [
         r"/dp/([A-Z0-9]{10})",
@@ -60,6 +62,13 @@ def extract_asin(url):
         if match:
             return match.group(1)
     return None
+
+def get_high_res_image(img_url):
+    """Amazon এর থাম্বনেইল ইমেজকে হাই-রেজোলিউশনে কনভার্ট করে"""
+    if not img_url or img_url == "N/A":
+        return "https://via.placeholder.com/150"
+    # _AC_... অংশটি সরিয়ে দিলে অরিজিনাল সাইজ পাওয়া যায়
+    return re.sub(r'\._AC_.*?\.', '.', img_url)
 
 # --- Local Storage Functions for Content Planner ---
 PLANNER_FILE = 'content_planner.json'
@@ -83,7 +92,6 @@ def save_planner_data(data):
 
 # --- Text Formatting Function (Inline CSS Version) ---
 def format_text_to_html(text, style_name):
-    # Define Inline Styles for each theme
     styles = {
         "Modern Clean": {
             "div": "font-family: 'Inter', 'Segoe UI', sans-serif; line-height: 1.7; color: #333; max-width: 100%;",
@@ -122,10 +130,8 @@ def format_text_to_html(text, style_name):
     
     current_style = styles.get(style_name, styles["Modern Clean"])
     
-    # Start HTML with Container Div
     html_content = f'<div style="{current_style["div"]}">\n'
     
-    # Parse Markdown
     lines = text.split('\n')
     in_list = False
     
@@ -137,20 +143,17 @@ def format_text_to_html(text, style_name):
                 in_list = False
             continue
             
-        # Headers
         if line.startswith('### '):
             html_content += f'<h3 style="{current_style["h3"]}">{line[4:]}</h3>\n'
         elif line.startswith('## '):
             html_content += f'<h2 style="{current_style["h2"]}">{line[3:]}</h2>\n'
         elif line.startswith('# '):
             html_content += f'<h1 style="{current_style["h1"]}">{line[2:]}</h1>\n'
-        # Lists
         elif line.startswith('- ') or line.startswith('* '):
             if not in_list:
                 html_content += f'<ul style="{current_style["ul"]}">\n'
                 in_list = True
             html_content += f'<li style="{current_style["li"]}">{line[2:]}</li>\n'
-        # Images (Basic Markdown Syntax: ![alt](url))
         elif line.startswith('![') and '](' in line:
             try:
                 alt = line.split('![')[1].split('](')[0]
@@ -158,12 +161,10 @@ def format_text_to_html(text, style_name):
                 html_content += f'<img src="{src}" alt="{alt}" style="{current_style["img"]}">\n'
             except:
                 html_content += f'<p style="{current_style["p"]}">{line}</p>\n'
-        # Paragraphs
         else:
             if in_list:
                 html_content += "</ul>\n"
                 in_list = False
-            # Bold parsing with inline style
             line = re.sub(r'\*\*(.*?)\*\*', f'<strong style="{current_style["strong"]}">\\1</strong>', line)
             html_content += f'<p style="{current_style["p"]}">{line}</p>\n'
             
@@ -500,30 +501,26 @@ with tab_affiliate:
         st.subheader("📝 Generated HTML Code")
         st.code(full_html_output, language='html')
         st.subheader("👁️ Live Preview")
-        st.components.v1.html(full_html_output, height=600, scrolling=True)
+        components.html(full_html_output, height=600, scrolling=True)
 
 # ==========================
 # TAB 4: CONTENT PLANNER (Updated with Grid Card View)
 # ==========================
 with tab_planner:
     st.header("🗂️ Keyword Cluster & Content Planner")
-    st.info("আপনার কিওয়ার্ড ক্লাস্টারগুলো এখানে সেভ রাখুন এবং কাজের অগ্রগতি ট্র্যাক করুন। ডাটা অটোমেটিক সেভ থাকবে।")
+    st.info("আপনার কিওয়ার্ড ক্লাস্টারগুলো এখানে সেভ রাখুন এবং কাজের অগ্রগতি ট্র্যাক করুন। ডাটা অটোমেটিক সেভ থাকবে।")
 
     # Load Data
     if 'planner_data' not in st.session_state:
         st.session_state.planner_data = load_planner_data()
 
     # --- Dashboard Metrics ---
-    # Metric Logic Updated: Count keywords (articles) instead of clusters
     total_keywords_count = 0
     completed_keywords_count = 0
 
     for item in st.session_state.planner_data:
-        # Get list of all keywords in this cluster
         kws = [k.strip() for k in item.get('keywords', '').split(';') if k.strip()]
         total_keywords_count += len(kws)
-        
-        # Get count of checked keywords
         checked = item.get('checked_keywords', [])
         completed_keywords_count += len(checked)
 
@@ -538,8 +535,8 @@ with tab_planner:
         m3.metric("⏳ Pending Articles", pending_keywords_count)
 
     with col_actions:
-        st.write("") # Spacer to align
-        st.write("") # Spacer to align
+        st.write("") 
+        st.write("") 
         if total_keywords_count > 0:
             if st.button("🗑️ সব ডাটা মুছে ফেলুন", type="primary", use_container_width=True):
                 st.session_state.planner_data = []
@@ -556,8 +553,6 @@ with tab_planner:
             st.caption("Format: `Cluster Label : YOUR LABEL Keywords: key1; key2; key3`")
             raw_text = st.text_area("Paste your cluster data here:", height=150)
             if st.button("Add from Text"):
-                # Regex to parse the specific format provided by user
-                # Matches: Cluster Label : [Match Group 1] Keywords: [Match Group 2]
                 matches = re.findall(r"Cluster Label\s*[:\|]\s*(.*?)\s*Keywords\s*[:\|]\s*(.*)", raw_text, re.IGNORECASE | re.MULTILINE)
                 
                 if matches:
@@ -565,13 +560,12 @@ with tab_planner:
                     for match in matches:
                         label = match[0].strip()
                         keywords = match[1].strip()
-                        # Add to session state if not exists (simple duplicate check by label)
                         if not any(d['label'] == label for d in st.session_state.planner_data):
                             st.session_state.planner_data.append({
                                 'label': label,
                                 'keywords': keywords,
                                 'done': False,
-                                'checked_keywords': [] # List to track completed sub-keywords
+                                'checked_keywords': [] 
                             })
                             count += 1
                     save_planner_data(st.session_state.planner_data)
@@ -589,15 +583,12 @@ with tab_planner:
                     else:
                         df = pd.read_excel(uploaded_file)
                     
-                    # Try to find relevant columns - SMART SELECTION
                     label_cols = [c for c in df.columns if 'label' in c.lower() or 'cluster' in c.lower()]
                     kw_cols = [c for c in df.columns if 'keyword' in c.lower()]
                     
-                    # Default selection
                     label_col = label_cols[0] if label_cols else None
                     kw_col = None
 
-                    # Smart selection for keyword column (avoid counts like '25')
                     if kw_cols:
                         for col in kw_cols:
                             sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else ""
@@ -631,12 +622,11 @@ with tab_planner:
     # --- Display Cards (GRID LAYOUT) ---
     st.subheader("Your Content Plan")
     
-    # Filtering
     filter_status = st.radio("Filter:", ["All", "Pending", "Completed"], horizontal=True)
     
     display_data = []
     for i, item in enumerate(st.session_state.planner_data):
-        item['original_index'] = i # Keep track of index for updating
+        item['original_index'] = i 
         if filter_status == "All":
             display_data.append(item)
         elif filter_status == "Pending" and not item['done']:
@@ -647,25 +637,21 @@ with tab_planner:
     if not display_data:
         st.info("No clusters found matching your filter.")
     else:
-        # Create a grid with 3 columns
         cols = st.columns(3)
         
         for i, item in enumerate(display_data):
             idx = item['original_index']
-            col = cols[i % 3] # Distribute items across 3 columns
+            col = cols[i % 3] 
             
             with col:
-                # CARD CONTAINER
                 with st.container(border=True):
                     # --- Header Section ---
                     h_col1, h_col2 = st.columns([0.8, 0.2])
                     
                     with h_col1:
-                        # Cluster Title with Strikethrough if done
                         title_style = "text-decoration: line-through; color: gray;" if item['done'] else "font-weight: bold; color: #1f77b4; font-size: 16px;"
                         st.markdown(f"<div style='{title_style}'>{item['label']}</div>", unsafe_allow_html=True)
                         
-                        # Cluster Done Checkbox
                         is_done = st.checkbox("Mark Complete", value=item['done'], key=f"status_{idx}")
                         if is_done != item['done']:
                             st.session_state.planner_data[idx]['done'] = is_done
@@ -681,29 +667,24 @@ with tab_planner:
                     st.markdown("---")
                     
                     # --- Scrollable Keywords List ---
-                    # Using container with fixed height for scroll
                     with st.container(height=250, border=False):
                         keywords_list = [k.strip() for k in item['keywords'].split(';') if k.strip()]
                         
                         if not keywords_list:
                             st.caption("No keywords.")
                         else:
-                            # Sub-task Checkboxes
                             checked_kws = set(item.get('checked_keywords', []))
                             
                             for kw in keywords_list:
-                                # Unique key for each checkbox: cluster_index + keyword
                                 kw_key = f"chk_{idx}_{hash(kw)}"
                                 is_checked = kw in checked_kws
                                 
-                                # Use columns for layout: Checkbox | Copy-able Code Block
                                 k_col1, k_col2 = st.columns([0.15, 0.85])
                                 
                                 with k_col1:
                                     new_checked = st.checkbox("Done", value=is_checked, key=kw_key, label_visibility="collapsed")
                                 
                                 with k_col2:
-                                    # Use st.code to provide a copy button
                                     st.code(kw, language=None)
                                 
                                 if new_checked != is_checked:
@@ -714,7 +695,6 @@ with tab_planner:
                                     save_planner_data(st.session_state.planner_data)
                                     st.rerun()
                     
-                    # --- Edit Keywords Expander (Bottom of Card) ---
                     with st.expander("⚙️ Edit"):
                         updated_keywords = st.multiselect(
                             "Remove:",
@@ -759,16 +739,11 @@ with tab_formatter:
         st.divider()
         st.subheader("🎉 Your Formatted HTML")
         
-        # Convert text to styled HTML
         formatted_html = format_text_to_html(raw_blog_text, design_style)
         
-        # Display Code with Copy Button
         st.code(formatted_html, language='html')
-        
         st.subheader("👁️ Live Preview")
-        # Display preview inside an iframe to isolate styles
-        st.components.v1.html(formatted_html, height=600, scrolling=True)
-        
+        components.html(formatted_html, height=600, scrolling=True)
         st.success("HTML generated successfully! Copy the code above and paste it into your CMS (WordPress Custom HTML block, Blogger HTML view, etc.).")
 
 # ==========================
@@ -781,7 +756,6 @@ with tab_ocr:
     uploaded_image = st.file_uploader("Upload an Image (JPG, PNG)", type=["jpg", "png", "jpeg"])
 
     if uploaded_image is not None:
-        # Display the uploaded image
         col_img_view, col_text_view = st.columns(2)
         
         with col_img_view:
@@ -793,10 +767,7 @@ with tab_ocr:
             if st.session_state.get('do_ocr'):
                 with st.spinner("Extracting text..."):
                     try:
-                        # Open image with PIL
                         image = Image.open(uploaded_image)
-                        
-                        # Perform OCR
                         extracted_text = pytesseract.image_to_string(image)
                         
                         st.subheader("📝 Extracted Text:")
